@@ -77,7 +77,7 @@ const lipSyncMessage = async (message) => {
   );
   console.log(`Conversion done in ${new Date().getTime() - time}ms`);
 
-  const rhubarbPath = path.join(__dirname, "bin", "rhubarb.exe");
+  const rhubarbPath = path.join(__dirname, "bin", "rhubarb");
   await execCommand(
     `"${rhubarbPath}" -f json -o ${outputPathJson} ${outputAudioPath} -r phonetic`
   );
