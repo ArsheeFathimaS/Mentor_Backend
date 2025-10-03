@@ -85,7 +85,7 @@ app.post("/chat", async (req, res) => {
           animation: "Angry",
         },
         {
-          text: "You don't want to ruin Wawa Sensei with a crazy ChatGPT and ElevenLabs bill, right?",
+          text: "You don't want to ruin Robovision with a crazy ChatGPT and ElevenLabs bill, right?",
           audio: await audioFileToBase64("audios/api_1.wav"),
           lipsync: await readJsonTranscript("audios/api_1.json"),
           facialExpression: "smile",
