@@ -16,7 +16,11 @@ const voiceID = "ymu001dDcWSSzffANts3";
 
 const app = express();
 app.use(express.json());
-app.use(cors());
+// Change this line in your backend code
+const frontendURL = "https://virtual-mentor-frontend.vercel.app/"; // <-- Put your REAL Vercel URL here
+app.use(cors({
+  origin: frontendURL
+}));
 const port = 3000;
 
 app.get("/", (req, res) => {
