@@ -1,14 +1,14 @@
 {
-  "name": "r3f-virtual-girlfriend-backend",
+  "name": "robovision-virtual-mentor-backend",
   "version": "1.0.0",
-  "description": "Backend for the virtual girlfriend app",
+  "description": "Backend for the virtual mentor app",
   "main": "index.js",
   "type": "module",
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js --ext js"
   },
-  "author": "Wawa SENSEI <contact@wawasensei.dev>",
+  "author": "Arshee Fathima S (contact: robovision.in.tech@gmail.com)",
   "dependencies": {
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
