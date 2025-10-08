@@ -55,6 +55,20 @@ app.get("/voices", async (req, res) => {
   res.send(await voice.getVoices(elevenLabsApiKey));
 });
 
+app.get("/test-advanced-lipsync", (req, res) => {
+  const testText = req.query.text || "Hello, how are you today?";
+  const duration = parseFloat(req.query.duration) || 3.0;
+  
+  const lipSyncData = generateAdvancedLipSync(testText, duration);
+  
+  res.json({
+    text: testText,
+    duration: duration,
+    mouthCuesCount: lipSyncData.mouthCues.length,
+    lipSync: lipSyncData
+  });
+});
+
 // -------------------------
 // ✅ FIXED lipSyncMessage()
 // -------------------------
@@ -137,6 +151,106 @@ const lipSyncMessage = async (messageIndex) => {
       reject(err);
     });
   });
+};
+
+// -------------------------
+// ✅ Advanced JavaScript Lip-Sync Generator
+// -------------------------
+const generateAdvancedLipSync = (text, duration = 3.0) => {
+  // Phonetic mapping for more accurate lip-sync
+  const phoneticMap = {
+    // Vowels
+    'a': 'A', 'e': 'E', 'i': 'E', 'o': 'O', 'u': 'O', 'y': 'E',
+    // Consonants - Bilabial (lips together)
+    'b': 'P', 'p': 'P', 'm': 'P',
+    // Consonants - Labiodental (lip to teeth)
+    'f': 'F', 'v': 'F',
+    // Consonants - Dental/Alveolar (tongue to teeth/ridge)
+    't': 'T', 'd': 'T', 'n': 'T', 'l': 'T', 's': 'S', 'z': 'S',
+    // Consonants - Velar (back of tongue to soft palate)
+    'k': 'K', 'g': 'K',
+    // Consonants - Special cases
+    'th': 'TH', 'sh': 'S', 'ch': 'T', 'j': 'T', 'r': 'A',
+    // Default
+    'default': 'A'
+  };
+
+  // Split text into words and analyze each character
+  const words = text.toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/);
+  const mouthCues = [];
+  let currentTime = 0;
+  
+  // Calculate timing based on text complexity
+  const totalCharacters = text.length;
+  const avgCharDuration = duration / totalCharacters;
+  
+  words.forEach((word, wordIndex) => {
+    const wordStartTime = currentTime;
+    let wordDuration = 0;
+    
+    // Analyze each character in the word
+    for (let i = 0; i < word.length; i++) {
+      const char = word[i];
+      const nextChar = word[i + 1];
+      
+      // Handle special combinations
+      let mouthShape = 'A';
+      if (char === 't' && nextChar === 'h') {
+        mouthShape = phoneticMap['th'];
+        i++; // Skip next character
+      } else if (char === 's' && nextChar === 'h') {
+        mouthShape = phoneticMap['sh'];
+        i++; // Skip next character
+      } else if (char === 'c' && nextChar === 'h') {
+        mouthShape = phoneticMap['ch'];
+        i++; // Skip next character
+      } else {
+        mouthShape = phoneticMap[char] || phoneticMap['default'];
+      }
+      
+      // Calculate character duration with variation
+      const baseDuration = avgCharDuration * (0.8 + Math.random() * 0.4);
+      const charDuration = Math.max(0.05, baseDuration); // Minimum 50ms
+      
+      // Add mouth cue
+      mouthCues.push({
+        start: currentTime,
+        end: currentTime + charDuration,
+        value: mouthShape
+      });
+      
+      currentTime += charDuration;
+      wordDuration += charDuration;
+    }
+    
+    // Add small pause between words (except last word)
+    if (wordIndex < words.length - 1) {
+      const pauseDuration = Math.random() * 0.1 + 0.05; // 50-150ms pause
+      currentTime += pauseDuration;
+    }
+  });
+  
+  // Ensure we don't exceed the duration
+  if (currentTime > duration) {
+    const scale = duration / currentTime;
+    mouthCues.forEach(cue => {
+      cue.start *= scale;
+      cue.end *= scale;
+    });
+  }
+  
+  // Add some natural variation to make it look more realistic
+  mouthCues.forEach((cue, index) => {
+    if (Math.random() < 0.1) { // 10% chance to vary
+      const variations = ['A', 'E', 'O'];
+      cue.value = variations[Math.floor(Math.random() * variations.length)];
+    }
+  });
+  
+  console.log(`Generated ${mouthCues.length} advanced mouth cues for "${text}" (${duration}s)`);
+  return {
+    mouthCues: mouthCues
+  };
 };
 
 // -------------------------
@@ -249,17 +363,20 @@ app.post("/chat", async (req, res) => {
           const lipsyncFilePath = path.join(tempPath, `message_${i}.json`);
           message.lipsync = await readJsonTranscript(lipsyncFilePath);
         } catch (error) {
-          console.log("Lip sync failed, using default:", error.message);
-          message.lipsync = null; // Use default lip sync
+          console.log("Lip sync failed, using advanced fallback:", error.message);
+          // Use advanced JavaScript lip-sync generator
+          const audioDuration = Math.max(2.0, textInput.length * 0.08); // Estimate based on text length
+          message.lipsync = generateAdvancedLipSync(textInput, audioDuration);
         }
 
         const audioFilePath = path.join(tempPath, `message_${i}.mp3`);
         message.audio = await audioFileToBase64(audioFilePath);
       } catch (error) {
         console.error("Audio generation failed:", error);
-        // Fallback: return text without audio
+        // Fallback: return text without audio but with advanced lip-sync
         message.audio = null;
-        message.lipsync = null;
+        const audioDuration = Math.max(2.0, textInput.length * 0.08);
+        message.lipsync = generateAdvancedLipSync(textInput, audioDuration);
       }
     }
 
