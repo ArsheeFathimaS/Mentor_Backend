@@ -29,6 +29,7 @@ const allowedOrigins = [
   "https://virtual-mentor-frontend.vercel.app",
   "https://virtual-mentor-frontend.vercel.app/",
   "http://localhost:5173",
+  "https://mentor-frontend.vercel.app/", 
 ];
 
 app.use(
