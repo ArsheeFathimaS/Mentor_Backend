@@ -1,4 +1,6 @@
 .env
 node_modules
 bin
-audios/message_*
+audios/message_*"node_modules/" 
+".env" 
+"*.log" 

@@ -1,4 +1,3 @@
-import { exec } from "child_process";
 import cors from "cors";
 import dotenv from "dotenv";
 import voice from "elevenlabs-node";
@@ -7,6 +6,7 @@ import { promises as fs } from "fs";
 import OpenAI from "openai";
 import path from "path";
 import os from "os";
+import { spawn } from "child_process";
 import { fileURLToPath } from "url";
 
 dotenv.config();
@@ -24,21 +24,24 @@ const voiceID = "ymu001dDcWSSzffANts3";
 const app = express();
 app.use(express.json());
 
+// --- ✅ CORS setup ---
 const allowedOrigins = [
   "https://virtual-mentor-frontend.vercel.app",
   "https://virtual-mentor-frontend.vercel.app/",
   "http://localhost:5173",
 ];
 
-app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      callback(new Error("Not allowed by CORS"));
-    }
-  },
-}));
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
+  })
+);
 
 const port = process.env.PORT || 3000;
 
@@ -50,61 +53,119 @@ app.get("/voices", async (req, res) => {
   res.send(await voice.getVoices(elevenLabsApiKey));
 });
 
-const execCommand = (command) => {
-  return new Promise((resolve, reject) => {
-    exec(command, (error, stdout, stderr) => {
-      if (error) {
-        console.error(`exec error: ${error}`);
-        reject(error);
-        return;
+// -------------------------
+// ✅ FIXED lipSyncMessage()
+// -------------------------
+const lipSyncMessage = async (messageIndex) => {
+  const start = Date.now();
+  console.log(`Starting conversion for message ${messageIndex}`);
+
+  const tempPath = os.tmpdir();
+  const inputAudioPath = path.join(tempPath, `message_${messageIndex}.mp3`);
+  const outputAudioPath = path.join(tempPath, `message_${messageIndex}.wav`);
+  const outputJsonPath = path.join(tempPath, `message_${messageIndex}.json`);
+
+  // --- Convert MP3 → WAV using ffmpeg ---
+  await new Promise((resolve, reject) => {
+    const ffmpeg = spawn(
+      "ffmpeg",
+      ["-y", "-i", inputAudioPath, outputAudioPath],
+      { shell: true }
+    );
+
+    ffmpeg.stderr.on("data", (data) => {}); // silence output
+
+    ffmpeg.on("close", (code) => {
+      if (code === 0) {
+        console.log(`Conversion done in ${Date.now() - start}ms`);
+        resolve();
+      } else {
+        reject(new Error(`FFmpeg exited with code ${code}`));
       }
-      resolve(stdout);
+    });
+  });
+
+  // --- Detect Rhubarb executable path ---
+  const rhubarbPath = path.join(__dirname, ".bin", process.platform === "win32" ? "rhubarb.exe" : "rhubarb");
+
+
+  console.log("Running rhubarb:", rhubarbPath);
+
+  // --- Run Rhubarb ---
+  await new Promise((resolve, reject) => {
+    const rhubarb = spawn(
+      rhubarbPath,
+      ["-f", "json", "-o", outputJsonPath, outputAudioPath, "-r", "phonetic"],
+      { shell: false }
+    );
+
+    rhubarb.stderr.on("data", (data) => {
+      console.error("Rhubarb error:", data.toString());
+    });
+
+    rhubarb.on("close", (code) => {
+      if (code === 0) {
+        console.log(`Lip sync done in ${Date.now() - start}ms`);
+        resolve();
+      } else {
+        reject(new Error(`Rhubarb exited with code ${code}`));
+      }
+    });
+
+    rhubarb.on("error", (err) => {
+      console.error("Failed to start rhubarb:", err);
+      reject(err);
     });
   });
 };
 
-const lipSyncMessage = async (message) => {
-  const time = new Date().getTime();
-  console.log(`Starting conversion for message ${message}`);
-
-  const tempPath = os.tmpdir();
-  const inputAudioPath = path.join(tempPath, `message_${message}.mp3`);
-  const outputAudioPath = path.join(tempPath, `message_${message}.wav`);
-  const outputPathJson = path.join(tempPath, `message_${message}.json`);
-
-  await execCommand(
-    `ffmpeg -y -i ${inputAudioPath} ${outputAudioPath}`
-  );
-  console.log(`Conversion done in ${new Date().getTime() - time}ms`);
-
-  const rhubarbPath = path.join(__dirname, "bin", "rhubarb");
-  await execCommand(
-    `"${rhubarbPath}" -f json -o ${outputPathJson} ${outputAudioPath} -r phonetic`
-  );
-  console.log(`Lip sync done in ${new Date().getTime() - time}ms`);
-};
-
+// -------------------------
+// ✅ Chat Endpoint
+// -------------------------
 app.post("/chat", async (req, res) => {
   const userMessage = req.body.message;
 
+  // If no message, return default sample
   if (!userMessage) {
-    // You should generate these intro files or remove this section
-    // For now, let's send a simple text response.
-    res.send({
-      messages: [{
-        text: "Hello! How can I help you today?",
-        facialExpression: "smile",
-        animation: "Talking_1",
-        audio: null, // No pre-recorded audio
-        lipsync: null,
-      }, ],
-    });
+    try {
+      const sampleAudioPath = path.join(__dirname, "audios", "message_0.mp3");
+      const sampleLipsyncPath = path.join(__dirname, "audios", "message_0.json");
+
+      const audioData = await audioFileToBase64(sampleAudioPath);
+      const lipsyncData = await readJsonTranscript(sampleLipsyncPath);
+
+      res.send({
+        messages: [
+          {
+            text: "Hi there! You can call me MentorBot.",
+            facialExpression: "smile",
+            animation: "Talking_1",
+            audio: audioData,
+            lipsync: lipsyncData,
+          },
+        ],
+      });
+    } catch (error) {
+      console.error("Error loading sample audio:", error);
+      res.send({
+        messages: [
+          {
+            text: "Hello! How can I help you today?",
+            facialExpression: "smile",
+            animation: "Talking_1",
+            audio: null,
+            lipsync: null,
+          },
+        ],
+      });
+    }
     return;
   }
 
+  // Check for missing API keys
   if (!elevenLabsApiKey || openai.apiKey === "-") {
     res.status(400).send({
-      error: "API keys are not configured on the server."
+      error: "API keys are not configured on the server.",
     });
     return;
   }
@@ -114,29 +175,26 @@ app.post("/chat", async (req, res) => {
       model: "gpt-3.5-turbo-1106",
       max_tokens: 1000,
       temperature: 0.6,
-      response_format: {
-        type: "json_object",
-      },
-      messages: [{
-        role: "system",
-        content: `
-        You are a virtual mentor for kids of age 6-18.
-        You will always reply with a JSON array of messages. With a maximum of 3 messages.
-        Each message has a text, facialExpression, and animation property.
-        The different facial expressions are: smile, sad, angry, surprised, funnyFace, and default.
-        The different animations are: Talking_0, Talking_1, Talking_2, Crying, Laughing, Rumba, Idle, Terrified, and Angry. 
-        `,
-      }, {
-        role: "user",
-        content: userMessage || "Hello",
-      }, ],
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content: `
+          You are a virtual mentor for kids of age 6-18.
+          You will always reply with a JSON array of messages (max 6).
+          Each message has a text, facialExpression, and animation property.
+          The different facial expressions are: smile, sad, angry, surprised, funnyFace, and default.
+          The different animations are: Talking_0, Talking_1, Talking_2, Crying, Laughing, Rumba, Idle, Terrified, and Angry.
+          `,
+        },
+        { role: "user", content: userMessage || "Hello" },
+      ],
     });
 
     let messages = JSON.parse(completion.choices[0].message.content);
-    if (messages.messages) {
-      messages = messages.messages;
-    }
+    if (messages.messages) messages = messages.messages;
 
+    // Process each message: TTS + Rhubarb lipsync
     for (let i = 0; i < messages.length; i++) {
       const message = messages[i];
       const tempPath = os.tmpdir();
@@ -153,17 +211,16 @@ app.post("/chat", async (req, res) => {
       message.lipsync = await readJsonTranscript(lipsyncFilePath);
     }
 
-    res.send({
-      messages
-    });
+    res.send({ messages });
   } catch (error) {
     console.error(error);
-    res.status(500).send({
-      error: "An error occurred while processing your request."
-    });
+    res.status(500).send({ error: "An error occurred while processing your request." });
   }
 });
 
+// -------------------------
+// ✅ Utility Functions
+// -------------------------
 const readJsonTranscript = async (file) => {
   const data = await fs.readFile(file, "utf8");
   return JSON.parse(data);
@@ -174,6 +231,7 @@ const audioFileToBase64 = async (file) => {
   return data.toString("base64");
 };
 
+// -------------------------
 app.listen(port, () => {
   console.log(`Virtual Mentor listening on port ${port}`);
 });
