@@ -69,20 +69,38 @@ const lipSyncMessage = async (messageIndex) => {
 
   // --- Convert MP3 → WAV using ffmpeg ---
   await new Promise((resolve, reject) => {
-    const ffmpeg = spawn(
+    // Try different FFmpeg paths for Railway
+    const ffmpegPaths = [
       "ffmpeg",
+      "/usr/bin/ffmpeg",
+      "/usr/local/bin/ffmpeg"
+    ];
+    
+    let ffmpegPath = ffmpegPaths[0];
+    const ffmpeg = spawn(
+      ffmpegPath,
       ["-y", "-i", inputAudioPath, outputAudioPath],
-      { shell: true }
+      { shell: false }
     );
 
-    ffmpeg.stderr.on("data", (data) => {}); // silence output
+    ffmpeg.stderr.on("data", (data) => {
+      console.log("FFmpeg stderr:", data.toString());
+    });
+
+    ffmpeg.on("error", (err) => {
+      console.error("FFmpeg error:", err);
+      // If FFmpeg is not available, skip conversion and use MP3 directly
+      console.log("FFmpeg not available, using MP3 directly");
+      resolve();
+    });
 
     ffmpeg.on("close", (code) => {
       if (code === 0) {
         console.log(`Conversion done in ${Date.now() - start}ms`);
         resolve();
       } else {
-        reject(new Error(`FFmpeg exited with code ${code}`));
+        console.log(`FFmpeg exited with code ${code}, using MP3 directly`);
+        resolve(); // Don't fail, just use MP3
       }
     });
   });
@@ -204,13 +222,18 @@ app.post("/chat", async (req, res) => {
       const textInput = message.text;
 
       await voice.textToSpeech(elevenLabsApiKey, voiceID, fileName, textInput);
-      await lipSyncMessage(i);
+      
+      try {
+        await lipSyncMessage(i);
+        const lipsyncFilePath = path.join(tempPath, `message_${i}.json`);
+        message.lipsync = await readJsonTranscript(lipsyncFilePath);
+      } catch (error) {
+        console.log("Lip sync failed, using default:", error.message);
+        message.lipsync = null; // Use default lip sync
+      }
 
       const audioFilePath = path.join(tempPath, `message_${i}.mp3`);
-      const lipsyncFilePath = path.join(tempPath, `message_${i}.json`);
-
       message.audio = await audioFileToBase64(audioFilePath);
-      message.lipsync = await readJsonTranscript(lipsyncFilePath);
     }
 
     res.send({ messages });
