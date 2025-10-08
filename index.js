@@ -189,7 +189,7 @@ app.post("/chat", async (req, res) => {
     res.send({
       messages: [
         {
-          text: userMessage ? `I received your message: "${userMessage}". However, I need API keys to provide voice responses. Please configure OpenAI and ElevenLabs API keys.`,
+          text: userMessage ? `I received your message: "${userMessage}". However, I need API keys to provide voice responses. Please configure OpenAI and ElevenLabs API keys.` : "Hello! I need API keys to provide voice responses. Please configure OpenAI and ElevenLabs API keys.",
           facialExpression: "default",
           animation: "Idle",
           audio: null,
