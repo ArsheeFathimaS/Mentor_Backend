@@ -184,8 +184,18 @@ app.post("/chat", async (req, res) => {
 
   // Check for missing API keys
   if (!elevenLabsApiKey || openai.apiKey === "-") {
-    res.status(400).send({
-      error: "API keys are not configured on the server.",
+    console.log("API keys missing, returning text-only response");
+    // Return text-only response instead of error
+    res.send({
+      messages: [
+        {
+          text: userMessage ? `I received your message: "${userMessage}". However, I need API keys to provide voice responses. Please configure OpenAI and ElevenLabs API keys.`,
+          facialExpression: "default",
+          animation: "Idle",
+          audio: null,
+          lipsync: null,
+        },
+      ],
     });
     return;
   }
@@ -221,19 +231,36 @@ app.post("/chat", async (req, res) => {
       const fileName = path.join(tempPath, `message_${i}.mp3`);
       const textInput = message.text;
 
-      await voice.textToSpeech(elevenLabsApiKey, voiceID, fileName, textInput);
-      
       try {
-        await lipSyncMessage(i);
-        const lipsyncFilePath = path.join(tempPath, `message_${i}.json`);
-        message.lipsync = await readJsonTranscript(lipsyncFilePath);
-      } catch (error) {
-        console.log("Lip sync failed, using default:", error.message);
-        message.lipsync = null; // Use default lip sync
-      }
+        await voice.textToSpeech(elevenLabsApiKey, voiceID, fileName, textInput);
+        console.log(`Audio file created: ${fileName}`);
+        
+        // Check if file exists
+        try {
+          await fs.access(fileName);
+          console.log("Audio file exists, proceeding with processing");
+        } catch (error) {
+          console.error("Audio file not found:", error);
+          throw new Error("Failed to create audio file");
+        }
+        
+        try {
+          await lipSyncMessage(i);
+          const lipsyncFilePath = path.join(tempPath, `message_${i}.json`);
+          message.lipsync = await readJsonTranscript(lipsyncFilePath);
+        } catch (error) {
+          console.log("Lip sync failed, using default:", error.message);
+          message.lipsync = null; // Use default lip sync
+        }
 
-      const audioFilePath = path.join(tempPath, `message_${i}.mp3`);
-      message.audio = await audioFileToBase64(audioFilePath);
+        const audioFilePath = path.join(tempPath, `message_${i}.mp3`);
+        message.audio = await audioFileToBase64(audioFilePath);
+      } catch (error) {
+        console.error("Audio generation failed:", error);
+        // Fallback: return text without audio
+        message.audio = null;
+        message.lipsync = null;
+      }
     }
 
     res.send({ messages });
